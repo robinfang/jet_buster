@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from keras.utils.np_utils import to_categorical
-# import pdb
+import pdb
 import sys
 import gc
 import logging
@@ -11,12 +11,14 @@ logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:
 
 def batch2rows(batch):
     jet_id = batch[0][-1]
+    # pdb.set_trace()
     rs = np.concatenate([i[0:-1] for i in batch])
     # print(len(rs))
     return jet_id, np.pad(rs, (0, 115 * 19 - len(rs)), 'constant', constant_values=0.0)
 
 
-def p2j(particle_df):
+def p2j():
+    global particle_df
     particle_df = particle_df.sort_values(
         ["jet_id", "particle_mass", "particle_energy"]).reset_index(drop=True)
     unique_jet_count = particle_df["jet_id"].nunique()
@@ -41,9 +43,9 @@ def p2j(particle_df):
     particle_df = particle_df.values
     logging.info(gc.collect())
     # print(particle_df[:10])
-    result_jet = np.empty((unique_jet_count, 1), dtype=str)
+    result_jet = np.empty((unique_jet_count, 1), dtype='U32')
     result_ds = np.empty((unique_jet_count, dimension-1), dtype=np.float32)
-
+    logging.info(result_ds.shape)
     pid = None
     current_batch = None
     len_ds = len(particle_df)
@@ -64,12 +66,19 @@ def p2j(particle_df):
             i += 1
             # 到达最后一个元素
     del particle_df
+    del current_batch
+    del category_list
+    result_jet = pd.DataFrame(result_jet)
+    result_ds = pd.DataFrame(result_ds)
     logging.info(gc.collect())
+    logging.info(result_jet.shape)
     logging.info(sys.getsizeof(result_jet)/1024/1024)
+    logging.info(result_ds.shape)
     logging.info(sys.getsizeof(result_ds)/1024/1024)
-    result_ds = np.concatenate((result_jet, result_ds), axis=1)
+    logging.info(locals())
+    logging.info(globals())
+    result_ds = pd.concat((result_jet, result_ds), axis=1)
     logging.info(gc.collect())
-    result_ds = pd.DataFrame(result_ds, dtype=np.float32).rename({0: "jet_id"}, axis=1, errors="raise")
     print(result_ds.dtypes)
     return result_ds
 
@@ -82,10 +91,15 @@ def j2e(jet_df, grouped_particle_df):
 
 if __name__ == '__main__':
 
-    df = pd.read_csv("d:/pyworkspace/jet_buster/data/complex_test_R04_particle.csv")
+    test_or_train = "train"
+    particle_df = pd.read_csv("e:/data/complex_{}_R04_particle.csv".format(test_or_train))
+    logging.info(sys.getsizeof(particle_df)/1024/1024)
+    logging.info(gc.collect())
+    df = p2j()
+    logging.info(gc.collect())
     logging.info(sys.getsizeof(df)/1024/1024)
-    df = p2j(df)
-    logging.info(sys.getsizeof(df)/1024/1024)
+    df.to_csv("e:/data/{}_particle_group_by_jet.csv".format(test_or_train), index=False)
+
     # df2 = pd.read_csv("d:/pyworkspace/jet_buster/data/complex_test_R04_jet.csv")
     # print(sys.getsizeof(df2)/1024/1024)
     # df3 = pd.merge(df, df2, how="inner", on="jet_id")
