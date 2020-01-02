@@ -1,14 +1,15 @@
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import label_binarize
 from keras.utils.np_utils import to_categorical
-import pdb
+# import pdb
 import sys
 
+
 def batch2rows(batch):
+    jet_id = batch[0][-1]
     rs = np.concatenate([i[0:-1] for i in batch])
-    #print(len(rs))
-    return np.pad(rs, (0, 115*19 - len(rs)), 'constant', constant_values=0)
+    # print(len(rs))
+    return np.concatenate(([jet_id], np.pad(rs, (0, 115 * 19 - len(rs)), 'constant', constant_values=0)))
 
 
 
@@ -51,6 +52,13 @@ def p2j(particle_df):
     result_ds = np.array(result_ds)
     print(result_ds.shape)
     return result_ds
+
+
+
+def j2e(jet_df, grouped_particle_df):
+    jet_df = jet_df.sort_values(["event_id", "jet_mass", "jet_energy"]).reset_index(drop=True)
+
+    pass
 
 
 if __name__ == '__main__':
