@@ -4,6 +4,7 @@ from keras.utils.np_utils import to_categorical
 import pdb
 import sys
 import gc
+import pickle
 import logging
 logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
     datefmt='%Y-%m-%d:%H:%M:%S',
@@ -12,9 +13,9 @@ logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:
 def batch2rows(batch):
     jet_id = batch[0][-1]
     # pdb.set_trace()
-    rs = np.concatenate([i[0:-1] for i in batch])
+    rs = np.array([i[0:-1] for i in batch])
     # print(len(rs))
-    return jet_id, np.pad(rs, (0, 115 * 19 - len(rs)), 'constant', constant_values=0.0)
+    return np.array([jet_id, rs])
 
 
 def p2j():
@@ -22,7 +23,8 @@ def p2j():
     particle_df = particle_df.sort_values(
         ["jet_id", "particle_mass", "particle_energy"]).reset_index(drop=True)
     unique_jet_count = particle_df["jet_id"].nunique()
-    dimension = 2186
+    logging.info(particle_df.shape)
+    p_count = particle_df.shape[0]
     logging.info(unique_jet_count)
     logging.info(gc.collect())
     len_cate = len(particle_df["particle_category"].unique())
@@ -43,9 +45,7 @@ def p2j():
     particle_df = particle_df.values
     logging.info(gc.collect())
     # print(particle_df[:10])
-    result_jet = np.empty((unique_jet_count, 1), dtype='U32')
-    result_ds = np.empty((unique_jet_count, dimension-1), dtype=np.float32)
-    logging.info(result_ds.shape)
+    result = []
     pid = None
     current_batch = None
     len_ds = len(particle_df)
@@ -54,7 +54,7 @@ def p2j():
         # pdb.set_trace()
         if pid is None or pid != row[-1]:
             if current_batch is not None:
-                result_jet[i], result_ds[i] = batch2rows(current_batch)
+                result.append(batch2rows(current_batch))
                 i += 1
             # 处理上一批的
             current_batch = [row]  # 新建本批次的
@@ -62,25 +62,17 @@ def p2j():
             current_batch.append(row)
         pid = row[-1]
         if idx == len_ds - 1:
-            result_jet[i], result_ds[i] = batch2rows(current_batch)
+            result.append(batch2rows(current_batch))
             i += 1
             # 到达最后一个元素
+        # gc.collect()
     del particle_df
     del current_batch
     del category_list
-    result_jet = pd.DataFrame(result_jet)
-    result_ds = pd.DataFrame(result_ds)
-    logging.info(gc.collect())
-    logging.info(result_jet.shape)
-    logging.info(sys.getsizeof(result_jet)/1024/1024)
-    logging.info(result_ds.shape)
-    logging.info(sys.getsizeof(result_ds)/1024/1024)
-    logging.info(locals())
-    logging.info(globals())
-    result_ds = pd.concat((result_jet, result_ds), axis=1)
-    logging.info(gc.collect())
-    print(result_ds.dtypes)
-    return result_ds
+    result = pd.DataFrame(result)
+    logging.info(result.dtypes)
+    logging.info(result.shape)
+    return result
 
 
 def j2e(jet_df, grouped_particle_df):
@@ -91,14 +83,16 @@ def j2e(jet_df, grouped_particle_df):
 
 if __name__ == '__main__':
 
-    test_or_train = "train"
+    test_or_train = "test"
     particle_df = pd.read_csv("e:/data/complex_{}_R04_particle.csv".format(test_or_train))
     logging.info(sys.getsizeof(particle_df)/1024/1024)
     logging.info(gc.collect())
     df = p2j()
     logging.info(gc.collect())
     logging.info(sys.getsizeof(df)/1024/1024)
-    df.to_csv("e:/data/{}_particle_group_by_jet.csv".format(test_or_train), index=False)
+    with open("e:/data/{}_p.pickle".format(test_or_train), "wb") as f:
+        pickle.dump(df, f, pickle.HIGHEST_PROTOCOL)
+    # df.to_csv("e:/data/{}_particle_group_by_jet.csv".format(test_or_train), index=False)
 
     # df2 = pd.read_csv("d:/pyworkspace/jet_buster/data/complex_test_R04_jet.csv")
     # print(sys.getsizeof(df2)/1024/1024)
