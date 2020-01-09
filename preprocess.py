@@ -3,9 +3,11 @@ import pandas as pd
 from keras.utils.np_utils import to_categorical
 import pdb
 import sys
+import os
 import gc
 import pickle
 import threading, queue
+from tqdm import tqdm
 import logging
 logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
     datefmt='%Y-%m-%d:%H:%M:%S',
@@ -46,7 +48,7 @@ def p2j(particle_df):
     logging.info(gc.collect())
     # print(particle_df[:10])
     result = []
-    pid = None
+    pid = None     # previous jet id
     current_batch = None
     len_ds = len(particle_df)
     for idx, row in enumerate(particle_df):
@@ -67,31 +69,91 @@ def p2j(particle_df):
 
 def j2e(jet_df, grouped_particle_df):
     jet_df = jet_df.sort_values(["event_id", "jet_mass", "jet_energy"]).reset_index(drop=True)
-    
     pass
 
+
+def load_ds(filename):
+    return pd.read_hdf(filename)
+
+
+def combine_j_p(jds, pds):
+    jds = jds.sort_values(["jet_id"]).reset_index(drop=True)
+    pds["label"] = jds["label"] if ("label" in jds) else 0
+    pds["event_id"] = jds["event_id"]
+    return pds
+
+
+def batch2rows_group_p(batch):
+    event_id = batch[0][-1]
+    label = batch[0][-2]
+    rs = pd.concat([pd.DataFrame(i[1]) for i in batch]).values
+    return pd.DataFrame([[event_id, rs, label]])
+
+def group_p_by_event(ds):
+    """将combine_j_p得到的以jet为键的数据转为按event为键的数据
+    
+    Args:
+        ds (TYPE): Description
+    
+    Returns:
+        TYPE: Description
+    """
+    assert "label" in ds
+    ds = ds.sort_values(["event_id"])
+    ds = ds.values
+    result = []
+    pid = None     # previous event id
+    current_batch = None
+    len_ds = len(ds)
+    i = 0
+    for idx, row in tqdm(enumerate(ds), total=len_ds):
+        # pdb.set_trace()
+        if pid is None or pid != row[-1]:
+            if current_batch is not None:
+                result.append(batch2rows_group_p(current_batch))
+            # 处理上一批的
+            current_batch = [row]  # 新建本批次的
+        else:
+            current_batch.append(row)
+        pid = row[-1]
+        if idx == len_ds - 1:
+            result.append(batch2rows_group_p(current_batch))
+            # 到达最后一个元素
+    return pd.concat(result).reset_index(drop=True)
 
 
 if __name__ == '__main__':
 
-    test_or_train = "train"
-    particle_df = pd.read_csv("data/complex_{}_R04_particle.csv".format(test_or_train))
+    test_or_train = "test"
+    if os.path.exists("data/{}.h5".format(test_or_train)):
+        particle_df = load_ds("data/{}.h5".format(test_or_train))
+    else:
+        particle_df = pd.read_csv("data/complex_{}_R04_particle.csv".format(test_or_train))
+        logging.info(gc.collect())
+        logging.info(sys.getsizeof(particle_df)/1024/1024)
+        particle_df = p2j(particle_df)
+        logging.info(sys.getsizeof(particle_df)/1024/1024)
+        particle_df.to_hdf("data/{}.h5".format(test_or_train), "data")
+    jet_df = pd.read_csv("data/complex_{}_R04_jet.csv".format(test_or_train))
+    df = combine_j_p(jet_df, particle_df)
+    del jet_df
+    del particle_df
     logging.info(gc.collect())
-    logging.info(sys.getsizeof(particle_df)/1024/1024)
-    particle_df = p2j(particle_df)
-    logging.info(sys.getsizeof(particle_df)/1024/1024)
+    df = group_p_by_event(df)
+    logging.info(df.shape)
+    # logging.info(sys.getsizeof(df)/1024/1024)
+    df.to_hdf("data/{}_grouped_by_event.h5".format(test_or_train), "data")
+    # to_write = queue.Queue()
 
-    to_write = queue.Queue()
+    # def writer():
+    #     # Call to_write.get() until it returns None
+    #     for k, df in iter(to_write.get, None):
+    #         df.to_hdf("data/{}.h5".format(test_or_train), "jet_id_{}".format(k), mode="a")
+    # threading.Thread(target=writer).start()
 
-    def writer():
-        # Call to_write.get() until it returns None
-        for k, df in iter(to_write.get, None):
-            df.to_hdf("data/{}.h5".format(test_or_train), "jet_id_{}".format(k), mode="a")
-    threading.Thread(target=writer).start()
-
-    for item in particle_df:
-        to_write.put(item)
-    to_write.put(None)
+    # for item in particle_df:
+    #     to_write.put(item)
+    # to_write.put(None)
 
 
     # with open("e:/data/{}_p.pickle".format(test_or_train), "wb") as f:
