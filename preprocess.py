@@ -13,10 +13,15 @@ logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:
     datefmt='%Y-%m-%d:%H:%M:%S',
     level=logging.DEBUG)
 
+
 def batch2rows(batch):
     jet_id = batch[0][-1]
+    result = []
+    for i in batch:
+        cat = to_categorical(i[0], num_classes=14, dtype=np.uint8)
+        result.append(np.concatenate((cat, i[1:-1]), axis=0))
     # pdb.set_trace()
-    rs = np.array([i[0:-1] for i in batch])
+    rs = np.array(result)
     # print(len(rs))
     return pd.DataFrame([[jet_id, rs]])
 
@@ -51,7 +56,7 @@ def p2j(particle_df):
     pid = None     # previous jet id
     current_batch = None
     len_ds = len(particle_df)
-    for idx, row in enumerate(particle_df):
+    for idx, row in tqdm(enumerate(particle_df), total=len_ds):
         # pdb.set_trace()
         if pid is None or pid != row[-1]:
             if current_batch is not None:
@@ -124,7 +129,7 @@ def group_p_by_event(ds):
 
 if __name__ == '__main__':
 
-    test_or_train = "test"
+    test_or_train = "train"
     if os.path.exists("data/{}.h5".format(test_or_train)):
         particle_df = load_ds("data/{}.h5".format(test_or_train))
     else:
